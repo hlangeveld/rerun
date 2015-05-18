@@ -74,21 +74,23 @@ rerun_color() {
         return 2
     }
     local color=$1 reset="\033[0m" black="\033[0;30m" code=
+
     case $color in
-        red)    code="\033[31m"   ;;
-        hred)   code="\033[1;31m" ;;
-        blue)   code="\033[34m"   ;;
-        cyan)   code="\033[36m"   ;;
-        yellow) code="\033[33m"   ;;
-        green)  code="\033[32m"   ;;
-        # text effects
-        bold)   code="\033[1m"    ;;
-        ul)     code="\033[4m"    ;;
-        # default to black
-        *)      code="$black"     ;;
+    red)    code="\033[31m"   ;;
+    hred)   code="\033[1;31m" ;;
+    blue)   code="\033[34m"   ;;
+    cyan)   code="\033[36m"   ;;
+    yellow) code="\033[33m"   ;;
+    green)  code="\033[32m"   ;;
+    # text effects
+    bold)   code="\033[1m"    ;;
+    ul)     code="\033[4m"    ;;
+    # default to black
+    *)      code="$black"     ;;
     esac
     shift;
     local message="$*"
+
     if [[ -n "${RERUN_COLOR:-}" ]]
     then echo -ne ${code}"${message:-}"${reset}
     else printf -- "%s" "${message:-}"
@@ -122,6 +124,7 @@ RERUN_LOG_LEVELS=([0]=debug [1]=info [2]=warn [3]=error [4]=fatal)
 # * Messages can be colored depending on level.
 RERUN_LOG_COLORS=([0]=cyan [1]=green [2]=yellow [3]=red [4]=hred)
 # * RERUN_LOG_FMT_CONSOLE specifies the format for messages printed to the console.
+
 if [[ -z ${RERUN_LOG_FMT_CONSOLE:-} ]]
 then 
     if [[ -t 0 ]]
@@ -129,38 +132,48 @@ then
     else RERUN_LOG_FMT_CONSOLE="[%level%] %command%: %message%"
     fi
 fi    
+
 # * RERUN_LOG_FMT_LOGFILE specifies the format for log entries.
 : ${RERUN_LOG_FMT_LOGFILE:="[%tstamp%] [%level%] %command%: %message%"}
 
 #
 rerun_log_puts() {
     (( $# != 4 )) && {
-        printf >&2 'wrong # args: should be: rerun_log_puts format level command message\n'
+        printf >&2 \
+          'wrong # args: should be: rerun_log_puts format level command message\n'
         return 2
     }
-    [[ "$2" =~ [0-9]+ ]] || { printf >&2 "rerun_log_puts: level must be numeric: '$2'\n"; return 2; }
+    [[ "$2" =~ [0-9]+ ]] || {
+      printf >&2 "rerun_log_puts: level must be numeric: '$2'\n"
+      return 2
+    }
     local -r format="$1" level="$2" command="$3" message="$4"
     local -r tstamp=$(date '+%Y-%m-%dT%H%M%S-%Z') 
     local fmt_spec=
+
     case "$format" in
-        console) fmt_spec=$RERUN_LOG_FMT_CONSOLE
-        ;;
-        logfile) fmt_spec=$RERUN_LOG_FMT_LOGFILE
-        ;;
+    console) fmt_spec=$RERUN_LOG_FMT_CONSOLE
+    ;;
+    logfile) fmt_spec=$RERUN_LOG_FMT_LOGFILE
+    ;;
     esac
-    local output=$(printf -- "%s" "$fmt_spec" | 
-    sed -e "s^%tstamp%^$tstamp^g" \
-        -e "s^%level%^${RERUN_LOG_LEVELS[$level]}^g" \
-        -e "s^%command%^$command^g" \
-        -e "s^%message%^$message^g")
+
+    local output=$(
+      printf -- "%s" "$fmt_spec" | 
+        sed -e "s^%tstamp%^$tstamp^g" \
+            -e "s^%level%^${RERUN_LOG_LEVELS[$level]}^g" \
+            -e "s^%command%^$command^g" \
+            -e "s^%message%^$message^g")
     
     if (( $level >= $RERUN_LOG_ERR_LEVEL ))
     then
         # write message to stderr
-        printf >&2 -- "%s\n" "$(rerun_color ${RERUN_LOG_COLORS[$level]} "$output")"
+        printf >&2 -- "%s\n" \
+          "$(rerun_color ${RERUN_LOG_COLORS[$level]} "$output")"
     else
         # write message to stdout
-        printf -- "%s\n" "$(rerun_color ${RERUN_LOG_COLORS[$level]} "$output")"
+        printf -- "%s\n" \
+          "$(rerun_color ${RERUN_LOG_COLORS[$level]} "$output")"
     fi
 
     return 0
@@ -195,12 +208,14 @@ rerun_log_syslog() {
 
     # map rerun_log level to syslog priority.
     local pri=
+
     case "$level" in
-        4)   pri="fatal"   ;;
-        3)   pri="err"     ;;
-        2)   pri="warning" ;;
-        1|0) pri="$level"  ;;
+    4)   pri="fatal"   ;;
+    3)   pri="err"     ;;
+    2)   pri="warning" ;;
+    1|0) pri="$level"  ;;
     esac
+
     logger -p "${facility}.${pri}" -t "${LOGNAME:-$USER} ($command)" -- "$message"
     return $?
 }
@@ -241,55 +256,71 @@ rerun_log() {
         return 2
     }
     local -r action="$1"
+
     case "$action" in
-        levels)
-            printf "%s\n" "${RERUN_LOG_LEVELS[*]}"
-            return 0
-            ;;
-        level)
-            (( $# == 1 )) && printf "%s\n" "${RERUN_LOG_LEVELS[$RERUN_LOG_LEVEL]}"
-            (( $# == 2 )) && { 
-                local level=$(rerun_list_index $2 "${RERUN_LOG_LEVELS[*]}")
-                (( "$level" >= 0 && "$level" <= ${#RERUN_LOG_LEVELS[*]})) && RERUN_LOG_LEVEL=$level || { printf >&2 "rerun_log level: invalid level: $2\n"; return 2; }
-            }
-            return 0
-            ;;
-        logfile)
-            (( $# == 1 )) && printf "%s\n" "${RERUN_LOG_FILE}"  || RERUN_LOG_FILE=$2
-            return 0
-            ;;
-        syslog)
-            (( $# == 1 )) && printf "%s\n" "${RERUN_LOG_SYSLOG}" || {
-                [[ "$2" =~ ^[[:alnum:]]+$ ]] || {
-                    printf >&2 "rerun_log syslog: facility is not a valid name: '$2'\n"
-                    return 2
-                }
-                RERUN_LOG_SYSLOG=$2
-            }
-            return 0
-            ;;
-        fmt-console)
-            (( $# == 1 )) && printf "%s\n" "${RERUN_LOG_FMT_CONSOLE}"  || RERUN_LOG_FMT_CONSOLE=$2
-            return 0
-            ;;
-        fmt-logfile)
-            (( $# == 1 )) && printf "%s\n" "${RERUN_LOG_FMT_LOGFILE}"  || RERUN_LOG_FMT_LOGFILE=$2
-            return 0
-            ;;
-        debug|info|warn|error|fatal)
-            local level=$(rerun_list_index $action "${RERUN_LOG_LEVELS[*]}")
-            shift
-            local message="$*"
-            ;;
-        log)
+    levels)
+        printf "%s\n" "${RERUN_LOG_LEVELS[*]}"
+        return 0
+    ;;
+    level)
+        (( $# == 1 )) &&
+          printf "%s\n" "${RERUN_LOG_LEVELS[$RERUN_LOG_LEVEL]}"
+
+        (( $# == 2 )) && { 
             local level=$(rerun_list_index $2 "${RERUN_LOG_LEVELS[*]}")
-            (( "$level" >= 0 && "$level" <= 4)) || { "rerun_log log: invalid level: $2"; return 2; }
-            shift
-            local message="$*"
-            ;;
-        *)
-            local message="$*"
-            ;;
+            (( "$level" >= 0 && "$level" <= ${#RERUN_LOG_LEVELS[*]})) &&
+              RERUN_LOG_LEVEL=$level || {
+                printf >&2 "rerun_log level: invalid level: $2\n"
+                return 2
+              }
+        }
+        return 0
+    ;;
+    logfile)
+        (( $# == 1 )) && printf "%s\n" "${RERUN_LOG_FILE}"  || RERUN_LOG_FILE=$2
+        return 0
+    ;;
+    syslog)
+        (( $# == 1 )) && printf "%s\n" "${RERUN_LOG_SYSLOG}" || {
+            [[ "$2" =~ ^[[:alnum:]]+$ ]] || {
+                printf >&2 "rerun_log syslog: facility is not a valid name: '$2'\n"
+                return 2
+            }
+            RERUN_LOG_SYSLOG=$2
+        }
+        return 0
+    ;;
+    fmt-console)
+        (( $# == 1 )) &&
+          printf "%s\n" "${RERUN_LOG_FMT_CONSOLE}"  ||
+            RERUN_LOG_FMT_CONSOLE=$2
+        return 0
+    ;;
+    fmt-logfile)
+        (( $# == 1 )) &&
+          printf "%s\n" "${RERUN_LOG_FMT_LOGFILE}"  ||
+            RERUN_LOG_FMT_LOGFILE=$2
+        return 0
+    ;;
+    debug|info|warn|error|fatal)
+        local level=$(rerun_list_index $action "${RERUN_LOG_LEVELS[*]}")
+        shift
+        local message="$*"
+    ;;
+    log)
+        local level=$(
+          rerun_list_index $2 "${RERUN_LOG_LEVELS[*]}"
+        )
+        (( "$level" >= 0 && "$level" <= 4)) || {
+          "rerun_log log: invalid level: $2"
+          return 2
+        }
+        shift
+        local message="$*"
+    ;;
+    *)
+        local message="$*"
+    ;;
     esac
     local -a ctx=()
     [[ -n "${RERUN_MODULE_DIR:-}" ]] && {
@@ -298,9 +329,11 @@ rerun_log() {
     [[ -n "${RERUN_COMMAND_DIR:-}" ]] && {
         ctx=( ${ctx[*]:-} $(basename "$RERUN_COMMAND_DIR") )
     }
+
     local command=$( IFS=:; printf "${ctx[*]:-}" )
     : ${level:=$RERUN_LOG_LEVEL}
     local current_level=$RERUN_LOG_LEVEL
+
     if (( $level >= $current_level ))
     then
         rerun_log_puts console $level "$command" "$message"
@@ -335,16 +368,19 @@ rerun_log() {
 # * Message format:     `"ERROR : ?message?"`
 # * Exit status returned to invoking command: 0
 rerun_die() {   
-   (( $# > 1 )) && { 
+    (( $# > 1 )) && { 
         local exit_status=$1
         shift        
     } 
     local -i frame=0; local info= 
+
     while info=$(caller $frame)
     do 
         local -a f=( $info )
         (( $frame > 0 )) && {
-            printf >&2 "ERROR in \"%s\" %s:%s\n" "${f[1]}" "${f[2]}" "${f[0]}"
+            printf >&2 \
+              "ERROR in \"%s\" %s:%s\n" \
+                "${f[1]}" "${f[2]}" "${f[0]}"
         }
         (( frame++ )) || :; #ignore increment errors (i.e., errexit is set)
     done
@@ -453,11 +489,11 @@ rerun_options_parse() {
     while (( "$#" > 0 )); do
         OPT="$1"
         case "$OPT" in
-            -?) rerun_option_usage
-                exit 2
-                ;;           
-            *)
-              break ; # end of options, just arguments left
+        -?) rerun_option_usage
+            exit 2
+        ;;           
+        *)
+          break ; # end of options, just arguments left
         esac
         shift
     done
@@ -486,12 +522,15 @@ rerun_modules() {
     }
     [[ ! -d $1 ]] && rerun_die "directory not found: $1"
     local -a modules
+
     for f in $1/*/metadata
     do
-       if [[ -f $f ]]
+        if [[ -f $f ]]
         then 
             local module="$(basename $(dirname $f))" 
-            [[ -z "${modules:-}" ]] && modules=( $module ) || modules=( ${modules[*]} $module )
+            [[ -z "${modules:-}" ]] &&
+              modules=( $module ) ||
+                modules=( ${modules[*]} $module )
         fi 
     done
     echo ${modules[*]}
@@ -524,7 +563,9 @@ rerun_commands() {
         if [[ -f $c ]]
         then 
             local command="$(basename $(dirname $c))" 
-            [[ -z "${commands:-}" ]] && commands=( $command ) || commands=( ${commands[*]} $command )
+            [[ -z "${commands:-}" ]] &&
+              commands=( $command ) ||
+                commands=( ${commands[*]} $command )
         fi 
     done
     echo ${commands[*]:-}
@@ -592,7 +633,9 @@ rerun_module_options() {
         if [[ -f $o ]]
         then 
             local option="$(basename $(dirname $o))" 
-            [[ -z "${options:-}" ]] && options=( $option ) || options=( ${options[*]} $option )
+            [[ -z "${options:-}" ]] &&
+              options=( $option ) ||
+                options=( ${options[*]} $option )
         fi 
     done
     echo ${options[*]:-}
@@ -742,12 +785,16 @@ rerun_path_absolute() {
 
 rerun_property_get() {
     (( $# >= 2 )) || {
-        rerun_die 'wrong # args: should be: rerun_property_get directory property ?expand?'
+        rerun_die \
+          'wrong # args: should be: rerun_property_get directory property ?expand?'
     }
     local -r directory="$1" property="$2" expand="${3:-true}"
-    [[ ! -f ${directory}/metadata ]] && rerun_die "metadata not found: ${directory}/metadata"
+    [[ ! -f ${directory}/metadata ]] &&
+      rerun_die "metadata not found: ${directory}/metadata"
 
-    if ! prop=$(grep "^$property=" ${directory}/metadata)
+    if ! prop=$(
+        grep "^$property=" ${directory}/metadata
+      )
     then return 2; # Property does not exist in the metadata file.
     fi
 
@@ -780,7 +827,8 @@ rerun_property_get() {
 #
 rerun_property_set() {
     (( $# < 2 )) && { 
-        rerun_die 'wrong # args: should be: rerun_property_set directory property=value ?property=value?'
+        rerun_die \
+          'wrong # args: should be: rerun_property_set directory property=value ?property=value?'
     }
     [[ ! -d $1 ]] && rerun_die "directory not found: $1"
 
@@ -794,18 +842,23 @@ rerun_property_set() {
         if grep "^$property=" $directory/metadata >/dev/null
         then 
             pattern=$(printf -- "-e s,%s=.*,%s=\"%s\"," $property $property "$value")
-            [[ -z "${sed_patts:-}" ]] && sed_patts=( "$pattern" ) || sed_patts=( ${sed_patts[@]} "$pattern" )
+            [[ -z "${sed_patts:-}" ]] &&
+              sed_patts=( "$pattern" ) ||
+                sed_patts=( ${sed_patts[@]} "$pattern" )
         else 
-            echo "$property=\"$value\"" >> $directory/metadata || rerun_die "Failed adding property: $property"
+            echo "$property=\"$value\"" >> $directory/metadata ||
+              rerun_die "Failed adding property: $property"
         fi
         shift; # move to next property=value binding.
     done
 
     if (( ${#sed_patts[*]} > 0 ))
     then
-        sed "${sed_patts[@]}" $directory/metadata \
-            > $directory/metadata.$$ || rerun_die  "Failed updating property data"
-        mv $directory/metadata.$$ $directory/metadata || rerun_die "Failed updating property data"
+        sed "${sed_patts[@]}" $directory/metadata > $directory/metadata.$$ ||
+          rerun_die  "Failed updating property data"
+
+        mv $directory/metadata.$$ $directory/metadata ||
+          rerun_die "Failed updating property data"
     fi
 
 }
@@ -838,7 +891,9 @@ rerun_script_lookup() {
     local -r module_dir="$1" command="$2"
     local -r command_dir="$module_dir/commands/${command}"
 
-    local -a searchlist=( $command_dir/script  $command_dir/default.sh )
+    local -a searchlist=( 
+      $command_dir/script  $command_dir/default.sh 
+    )
     for file in ${searchlist[*]}
     do
         if [[ -f  "$file" ]]
@@ -904,15 +959,15 @@ rerun_module_exists() {
 
     if [[ -f "${RERUN_MODULES:-}/$module/metadata" ]]
     then
-       echo $RERUN_MODULES/$module
-       return 0
+        echo $RERUN_MODULES/$module
+        return 0
     fi
 
-    if [[ "${RERUN_LOCATION:-}" = "${DEFAULT_BINDIR}" \
-        && -f "${DEFAULT_LIBDIR}/rerun/modules/$module/metadata" ]]
+    if [[ "${RERUN_LOCATION:-}" = "${DEFAULT_BINDIR}" && \
+          -f "${DEFAULT_LIBDIR}/rerun/modules/$module/metadata" ]]
     then
-       echo ${DEFAULT_LIBDIR}/rerun/modules/$module
-       return 0
+        echo ${DEFAULT_LIBDIR}/rerun/modules/$module
+        return 0
     fi
 
     echo ""
@@ -950,13 +1005,15 @@ rerun_module_exists() {
 #
 rerun_command_execute() {
     (( $# >= 2 )) || { 
-        rerun_die "wrong # args: should be: rerun_command_execute module command options" 
+        rerun_die \
+          "wrong # args: should be: rerun_command_execute module command options" 
     }
     local -r module="$1"
     local -r command="$2"
     shift; shift; # options are the remaining positional parameters.
 
-    RERUN_MODULE_DIR=$(rerun_module_exists "$module") || rerun_syntax_error "module not found: \"$module\""
+    RERUN_MODULE_DIR=$(rerun_module_exists "$module") ||
+      rerun_syntax_error "module not found: \"$module\""
     RERUN_COMMAND_DIR=$RERUN_MODULE_DIR/commands/$COMMAND
 
     rerun_script_exists "${RERUN_MODULE_DIR:-}" $command || {
@@ -969,7 +1026,14 @@ rerun_command_execute() {
 
     local -r script=$(rerun_script_lookup "$RERUN_MODULE_DIR" "$command")
 
-    export RERUN RERUN_VERSION RERUN_MODULES RERUN_MODULE_DIR RERUN_MODULE_VERSION RERUN_COMMAND_DIR RERUN_COLOR
+    export \
+      RERUN \
+      RERUN_VERSION \
+      RERUN_MODULES \
+      RERUN_MODULE_DIR \
+      RERUN_MODULE_VERSION \
+      RERUN_COMMAND_DIR \
+      RERUN_COLOR
     
     if [[ -n "${RERUN_VERBOSE:-}" ]]
     then
@@ -1024,7 +1088,8 @@ _rerun_options_populate() {
         return 2
     }
     local -r module=$1 command=$2 answers=$3
-    local module_dir=$(rerun_module_exists "$module") || rerun_syntax_error "module not found: \"$module\""
+    local module_dir=$(rerun_module_exists "$module") ||
+      rerun_syntax_error "module not found: \"$module\""
     local argline=
     for cmd_option in $(rerun_options $(dirname $module_dir) $module $command)
     do        
@@ -1129,11 +1194,14 @@ _rerun_module_summary() {
     }
     local -r module_dir=$1
     local -r module_dirname=$(rerun_module_exists $(basename "$module_dir")) && {
-    local -r module_name=$(basename "$module_dir")
-    local -r module_desc=$(rerun_property_get $module_dir DESCRIPTION)
-    local -r module_vers=$(rerun_property_get $module_dir VERSION) || module_vers=""
-    printf "%s%s: \"%s\" - %s\n" "${PAD:-}" \
-        "$(rerun_color bold $module_name)" "${module_desc}" "$module_vers"
+      local -r module_name=$(basename "$module_dir")
+      local -r module_desc=$(rerun_property_get $module_dir DESCRIPTION)
+      local -r module_vers=$(rerun_property_get $module_dir VERSION) || module_vers=""
+      printf "%s%s: \"%s\" - %s\n" \
+        "${PAD:-}" \
+        "$(rerun_color bold $module_name)" \
+        "${module_desc}" \
+        "$module_vers"
     }
 }
 
@@ -1161,8 +1229,8 @@ _rerun_modules_summary() {
     do
         [[ -f $module/metadata ]] && _rerun_module_summary $module
     done
-    if [[ ${RERUN_LOCATION:-} = "${DEFAULT_BINDIR}" 
-                && ${RERUN_MODULES:-} != "${DEFAULT_LIBDIR}/rerun/modules" ]]
+    if [[ ${RERUN_LOCATION:-} = "${DEFAULT_BINDIR}" &&
+          ${RERUN_MODULES:-} != "${DEFAULT_LIBDIR}/rerun/modules" ]]
     then
         echo
         echo $(rerun_color blue "Available modules in \"${DEFAULT_LIBDIR}/rerun/modules\":")
@@ -1185,16 +1253,18 @@ _rerun_commands_summary() {
     local -r directory=$1
     local -r module=$2
 
-    module_dir=$(rerun_module_exists "$module") || rerun_syntax_error "module not found: \"$module\""
+    module_dir=$(rerun_module_exists "$module") ||
+      rerun_syntax_error "module not found: \"$module\""
     echo $(rerun_color blue "Available commands in module, \"$module\":")
     shopt -s nullglob # enable
 
     for cmd in $module_dir/commands/*/metadata
-	do
+    do
         local cmd_name=$(basename $(dirname "$cmd"))
         local metadata=$module_dir/commands/${cmd_name}/metadata
         [[ -f "$metadata" ]] && cmd_desc=$(rerun_property_get $(dirname $cmd) DESCRIPTION)
         echo $(rerun_color bold "${cmd_name}: \"${cmd_desc}\"")
+
         if [[ -d "$module_dir/commands/${cmd_name}" ]]
         then            
             #
@@ -1208,16 +1278,21 @@ _rerun_commands_summary() {
                 then
                 (   set +u
                     argstring= summary=                  
-                    . $opt_metadata ; # Read the option's metadata.                    
+                    . $opt_metadata ; # Read the option\'s metadata.                    
                     [[ -n "${SHORT}" ]] && {                    
                        argstring=$(printf ' --%s|-%s'  "$NAME" "$SHORT")
                     } || {
                        argstring=$(printf " --%s" "$NAME" )
                     }	  
                     [[ "$ARGUMENTS" == "true" ]] && {
-                        # Lookup the default but set expand=false to not evalute possible variable.
-                        DEFAULT=$(rerun_property_get "$module_dir/options/${opt}" DEFAULT false)
-                        argstring=$(printf "%s <%s>" "$argstring" "$(rerun_color ul "${DEFAULT}")")
+                    # Lookup the default but set expand=false to not evalute possible variable.
+                        DEFAULT=$(
+                          rerun_property_get \
+                            "$module_dir/options/${opt}" DEFAULT false
+                        )
+                        argstring=$(
+                          printf "%s <%s>" "$argstring" "$(rerun_color ul "${DEFAULT}")"
+                        )
                     }
                     [[ "$REQUIRED" != "true" ]] && {
                         summary=$(printf "[%s]: \"%s\"" "${argstring}" "$DESCRIPTION") 
@@ -1254,44 +1329,44 @@ while (( "$#" > 0 )); do
         ! rerun_option_usage
         _rerun_examples $(basename "$0")
         exit 0
-	    ;;
-  	-G)
-	    export RERUN_COLOR="true"
-	    ;;
+    ;;
+    -G)
+        export RERUN_COLOR="true"
+    ;;
     -v)
         RERUN_VERBOSE="-vx"
-        ;;        
-  	-V)
-	    RERUN_VERBOSE="-vx"
-	    set -vx
-	    ;;
-  	--version)
-	    echo >&2 "$RERUN_VERSION"
+    ;;        
+    -V)
+        RERUN_VERBOSE="-vx"
+        set -vx
+    ;;
+    --version)
+        echo >&2 "$RERUN_VERSION"
         exit 0
-	    ;;
-	--man*)
-	    rerun_option_check "$#" "$1"
-	    _rerun_man_page $2
-	    exit 0
-	    ;;	
+    ;;
+    --man*)
+        rerun_option_check "$#" "$1"
+        _rerun_man_page $2
+        exit 0
+    ;;	
     --loglevel)
         rerun_option_check "$#" "$1"
         rerun_log level $2
         shift
-        ;;
-	-M)
-	    rerun_option_check "$#" "$1"
-	    RERUN_MODULES="$(rerun_path_absolute $2)"
-	    shift
-	    ;;
-	-A|--answer[s]*)
-	    rerun_option_check "$#" "$1"
-	    ANSWERS="$2"
+    ;;
+    -M)
+        rerun_option_check "$#" "$1"
+        RERUN_MODULES="$(rerun_path_absolute $2)"
+        shift
+    ;;
+    -A|--answer[s]*)
+        rerun_option_check "$#" "$1"
+        ANSWERS="$2"
         [[ ! -f $ANSWERS ]] && rerun_syntax_error "answers file not found: $ANSWERS"
-	    shift
-	    ;;		  
-	*)
-	    break;# Ignore remaining arguments as they are for the module.
+        shift
+    ;;		  
+    *)
+        break;# Ignore remaining arguments as they are for the module.
     esac
     shift
 done
@@ -1316,7 +1391,8 @@ then
     then
       RERUN_MODULES="${DEFAULT_LIBDIR}/rerun/modules";
     else      
-      RERUN_MODULES=${RERUN_LOCATION}/modules; # Set module directory relative to the `rerun` script:
+      # Set module directory relative to the `rerun` script:
+      RERUN_MODULES=${RERUN_LOCATION}/modules;
     fi
 fi
 
